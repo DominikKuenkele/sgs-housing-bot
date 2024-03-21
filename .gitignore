@@ -1,1 +1,3 @@
 __pycache__/
+*.db
+access_token.json

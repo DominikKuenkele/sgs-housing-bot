@@ -1,29 +1,49 @@
+import logging
+from dataclasses import dataclass
+from datetime import datetime
+
 from selenium.webdriver.common.by import By
 from selenium.webdriver.firefox.webdriver import WebDriver
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.support import expected_conditions
 from selenium.webdriver.support.wait import WebDriverWait
 
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
-class Appartment:
-    def __init__(self, appartment_element: WebElement) -> None:
-        self.id = appartment_element.find_element(By.TAG_NAME, "mat-card").get_property(
+
+class SGSApartment:
+    def __init__(self, apartment_element: WebElement) -> None:
+        self.id = apartment_element.find_element(By.TAG_NAME, "mat-card").get_property(
             "id"
         )
-        self.address = appartment_element.find_element(By.CLASS_NAME, "address").text
-        self.location = appartment_element.find_element(By.CLASS_NAME, "location").text
-        self.size = appartment_element.find_element(By.CLASS_NAME, "size").text.split(
+        self.address = apartment_element.find_element(By.CLASS_NAME, "address").text
+        self.location = apartment_element.find_element(By.CLASS_NAME, "location").text
+        self.size = apartment_element.find_element(By.CLASS_NAME, "size").text.split(
             "\n"
         )[0]
-        self.area = appartment_element.find_element(By.CLASS_NAME, "area").text.split(
-            "\n"
-        )[0]
-        self.rent = appartment_element.find_element(By.CLASS_NAME, "rent").text.split(
-            "\n"
-        )[0]
-        self.free_from = appartment_element.find_element(
-            By.CLASS_NAME, "free-from"
-        ).text.split("\n")[0]
+        self.area = float(
+            apartment_element.find_element(By.CLASS_NAME, "area").text.split("\n")[0]
+        )
+        self.rent = int(
+            apartment_element.find_element(By.CLASS_NAME, "rent").text.split("\n")[0]
+        )
+        self.free_from = datetime.strptime(
+            apartment_element.find_element(By.CLASS_NAME, "free-from").text.split("\n")[
+                0
+            ],
+            "%Y-%m-%d",
+        )
+        self.url = f"https://minasidor.sgs.se/market/residential/{self.id}"
+
+
+@dataclass
+class SGSFilter:
+    min_area: int = 0
+    max_rent: int = 100000
+
+    def __repr__(self) -> str:
+        return f"({self.min_area=}, {self.max_rent=})"
 
 
 class SGS:
@@ -32,16 +52,31 @@ class SGS:
     def __init__(self, driver: WebDriver) -> None:
         self.driver = driver
 
-    def get_appartments(self) -> list[Appartment]:
+    def get_apartments(
+        self, apartment_filter: SGSFilter = SGSFilter()
+    ) -> list[SGSApartment]:
         self.driver.get(self.URL)
 
         wait = WebDriverWait(self.driver, 15)
         wait.until(expected_conditions.title_is("Mina Sidor"))
 
-        appartments = [
-            Appartment(appartment)
-            for appartment in self.driver.find_elements(
+        log.info("Opened website")
+
+        apartments = [
+            SGSApartment(apartment)
+            for apartment in self.driver.find_elements(
                 By.CSS_SELECTOR, "taiga-market-objects-list > div"
             )
         ]
-        return appartments
+        log.info("Found %s apartments.", len(apartments))
+
+        log.info("Filtering with %s...", apartment_filter)
+        filtered_apartments = [
+            apartment
+            for apartment in apartments
+            if apartment.area >= apartment_filter.min_area
+            and apartment.rent <= apartment_filter.max_rent
+        ]
+        log.info("%s apartments remaining.", len(filtered_apartments))
+
+        return filtered_apartments
