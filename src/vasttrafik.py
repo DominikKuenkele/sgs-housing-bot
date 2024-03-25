@@ -25,31 +25,39 @@ class Location:
 
 
 class VasttrafikAPI:
-    ACCESS_TOKEN_PATH = "access_token.json"
+    ACCESS_TOKEN_FILE = "access_token.json"
     BASE_URL = "https://ext-api.vasttrafik.se/pr/v4"
 
-    def __init__(self, authentication_key) -> None:
+    def __init__(self, authentication_key, data_root) -> None:
+        self.data_root = data_root
         if not self._has_valid_token():
             self._generate_token(authentication_key)
 
-        with open(self.ACCESS_TOKEN_PATH, "r", encoding="utf-8") as f:
+        with open(
+            os.path.join(self.data_root, self.ACCESS_TOKEN_FILE), "r", encoding="utf-8"
+        ) as f:
             self.token = json.load(f)["access_token"]
 
     def _has_valid_token(self):
         valid = True
-        if not os.path.exists(self.ACCESS_TOKEN_PATH):
+        if not os.path.exists(os.path.join(self.data_root, self.ACCESS_TOKEN_FILE)):
             valid = False
 
-        with open(self.ACCESS_TOKEN_PATH, "r", encoding="utf-8") as f:
-            token = json.load(f)
-        decoded_token = jwt.decode(
-            token["access_token"],
-            options={"verify_signature": False},
-        )
-        expire_time = datetime.fromtimestamp(decoded_token["exp"])
+        else:
+            with open(
+                os.path.join(self.data_root, self.ACCESS_TOKEN_FILE),
+                "r",
+                encoding="utf-8",
+            ) as f:
+                token = json.load(f)
+            decoded_token = jwt.decode(
+                token["access_token"],
+                options={"verify_signature": False},
+            )
+            expire_time = datetime.fromtimestamp(decoded_token["exp"])
 
-        if expire_time < (datetime.now() + timedelta(minutes=10)):
-            valid = False
+            if expire_time < (datetime.now() + timedelta(minutes=10)):
+                valid = False
 
         return valid
 
@@ -61,8 +69,12 @@ class VasttrafikAPI:
         }
         data = "grant_type=client_credentials&scope=device_sgs"
 
-        with open(self.ACCESS_TOKEN_PATH, "w", encoding="utf-8") as f:
-            token = requests.post(token_url, data=data, headers=headers).json()
+        with open(
+            os.path.join(self.data_root, self.ACCESS_TOKEN_FILE), "w", encoding="utf-8"
+        ) as f:
+            token = requests.post(
+                token_url, data=data, headers=headers, timeout=10
+            ).json()
             print(token)
             json.dump(token, f)
 
@@ -72,7 +84,7 @@ class VasttrafikAPI:
             "Authorization": f"Bearer {self.token}",
         }
         data = {"q": search, "limit": 1}
-        response = requests.get(url, params=data, headers=headers).json()
+        response = requests.get(url, params=data, headers=headers, timeout=10).json()
 
         if len(response["results"]) == 0:
             raise LocationNotFoundException
@@ -110,7 +122,7 @@ class VasttrafikAPI:
             "dateTimeRelatesTo": "departure",
             "limit": 1,
         }
-        response = requests.get(url, params=data, headers=headers).json()
+        response = requests.get(url, params=data, headers=headers, timeout=10).json()
 
         if len(response["results"]) == 0:
             raise JourneyNotFoundException

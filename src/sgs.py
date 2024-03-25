@@ -1,5 +1,4 @@
 import logging
-from dataclasses import dataclass
 from datetime import datetime
 
 from selenium.webdriver.common.by import By
@@ -37,24 +36,13 @@ class SGSApartment:
         self.url = f"https://minasidor.sgs.se/market/residential/{self.id}"
 
 
-@dataclass
-class SGSFilter:
-    min_area: int = 0
-    max_rent: int = 100000
-
-    def __repr__(self) -> str:
-        return f"({self.min_area=}, {self.max_rent=})"
-
-
 class SGS:
     URL = "https://minasidor.sgs.se/market/residential?pageSize=100"
 
     def __init__(self, driver: WebDriver) -> None:
         self.driver = driver
 
-    def get_apartments(
-        self, apartment_filter: SGSFilter = SGSFilter()
-    ) -> list[SGSApartment]:
+    def get_apartments(self) -> list[SGSApartment]:
         self.driver.get(self.URL)
 
         wait = WebDriverWait(self.driver, 15)
@@ -70,13 +58,4 @@ class SGS:
         ]
         log.info("Found %s apartments.", len(apartments))
 
-        log.info("Filtering with %s...", apartment_filter)
-        filtered_apartments = [
-            apartment
-            for apartment in apartments
-            if apartment.area >= apartment_filter.min_area
-            and apartment.rent <= apartment_filter.max_rent
-        ]
-        log.info("%s apartments remaining.", len(filtered_apartments))
-
-        return filtered_apartments
+        return apartments
