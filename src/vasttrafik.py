@@ -75,7 +75,6 @@ class VasttrafikAPI:
             token = requests.post(
                 token_url, data=data, headers=headers, timeout=10
             ).json()
-            print(token)
             json.dump(token, f)
 
     def get_location(self, search) -> Location:

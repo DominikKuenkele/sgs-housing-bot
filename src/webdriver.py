@@ -2,10 +2,11 @@ from selenium.webdriver import Firefox, FirefoxOptions
 
 
 def get_webdriver(headless=True) -> Firefox:
-    firefox_options = FirefoxOptions()
-    firefox_options.headless = headless
+    options = FirefoxOptions()
+    if headless:
+        options.add_argument("--headless")
+    options.add_argument("--no-sandbox")
 
-    driver = Firefox(options=firefox_options)
-    driver.implicitly_wait(5)
+    driver = Firefox(options=options)
 
     return driver

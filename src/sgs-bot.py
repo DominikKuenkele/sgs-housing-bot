@@ -6,7 +6,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
 
-from sqlalchemy import create_engine, delete, event, select, update
+from sqlalchemy import and_, create_engine, delete, event, select, update
 from sqlalchemy.dialects.sqlite import insert
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session
@@ -19,7 +19,7 @@ from database import (
     SubscribedApartments,
     Subscription,
 )
-from mail import Mail, SMTPServerConfig
+from mail import MailSendException, MailServer, SMTPServerConfig
 from sgs import SGS
 from vasttrafik import VasttrafikAPI
 from webdriver import get_webdriver
@@ -81,10 +81,10 @@ def store_appartments(session, apartments):
     session.commit()
 
 
-def get_filtered_apartments(session):
+def get_filtered_apartments(session: Session):
     statement = (
         select(Apartment, Subscription, Destination)
-        .join(Destination)
+        .join(Destination, isouter=True)
         .where(Apartment.area > Subscription.min_area)
         .where(Apartment.rent < Subscription.max_rent)
     )
@@ -92,7 +92,7 @@ def get_filtered_apartments(session):
     return result.all()
 
 
-def update_new_apartment(session, apartment, subscription, destination, duration):
+def store_duration(session, apartment, destination, duration):
     statement = (
         insert(Distance)
         .values(
@@ -107,7 +107,10 @@ def update_new_apartment(session, apartment, subscription, destination, duration
         )
     )
     session.execute(statement)
+    session.commit()
 
+
+def store_subscribed_apartment(session, apartment, subscription):
     statement = (
         insert(SubscribedApartments)
         .values(
@@ -135,9 +138,15 @@ def get_new_apartments(session):
             Apartment,
             SubscribedApartments.apartment_id == Apartment.id,
         )
-        .join(Distance)
-        .join(Destination)
-        .where(Destination.subscription_id == Subscription.id)
+        .join(Distance, isouter=True)
+        .join(
+            Destination,
+            and_(
+                Destination.id == Distance.destination_id,
+                Destination.subscription_id == Subscription.id,
+            ),
+            isouter=True,
+        )
         .where(SubscribedApartments.notified == False)
     )
     return session.execute(statement).all()
@@ -147,13 +156,9 @@ def get_notification(apartments):
     notifications = defaultdict(dict)
     for subscription, apartment, distance, destination in apartments:
         if apartment in notifications[subscription]:
-            notifications[subscription][apartment][
-                destination.destination
-            ] = distance.time
+            notifications[subscription][apartment][destination] = distance
         else:
-            notifications[subscription][apartment] = {
-                destination.destination: distance.time
-            }
+            notifications[subscription][apartment] = {destination: distance}
     return notifications
 
 
@@ -161,31 +166,23 @@ def format_mail(apartment_dict):
     return [
         f"""{apartment.address} - {apartment.location} (free from {datetime.strftime(apartment.free_from, "%-d %b")}):
 {apartment.size} | {apartment.area}m² | {apartment.rent} SEK
-{" | ".join([f"To {destination}: {time}min" for destination, time in distances.items()])}
+{" | ".join([f"To {destination.destination}: {distance.time}min" for destination, distance in distances.items()]) if list(distances.keys())[0] is not None else ""}
 {apartment.url}
 """
         for apartment, distances in apartment_dict.items()
     ]
 
 
-def send_mail(smtp_config, apartment_list, receiver):
-    mail = Mail(smtp_config)
-    mail_content = "\n".join(apartment_list)
-
-    mail.send(
-        subject="New SGS apartments",
-        sender=smtp_config.user,
-        receivers=[receiver],
-        content=mail_content,
-    )
-
-
-def store_sent_apartments(session, apartment_dict, subscription):
+def store_sent_apartments(session, apartment_dict, subscription, value):
     statement = (
         update(SubscribedApartments)
-        .where(Apartment.id.in_([apartment.id for apartment in apartment_dict.keys()]))
-        .where(Subscription.id == subscription.id)
-        .values(notified=True)
+        .where(
+            SubscribedApartments.apartment_id.in_(
+                [apartment.id for apartment in apartment_dict.keys()]
+            )
+        )
+        .where(SubscribedApartments.subscription_id == subscription.id)
+        .values(notified=value)
     )
 
     session.execute(statement)
@@ -193,9 +190,7 @@ def store_sent_apartments(session, apartment_dict, subscription):
 
 
 def get_db_engine(data_root):
-    engine = create_engine(
-        f"sqlite:///{os.path.join(data_root, 'database.db')}", echo=True
-    )
+    engine = create_engine(f"sqlite:///{os.path.join(data_root, 'database.db')}")
     Base.metadata.create_all(engine)
 
     return engine
@@ -207,29 +202,30 @@ def crawl(config, engine, _args):
 
         log.info("opening SGS website...")
         crawled_apartments = SGS(webdriver).get_apartments()
-    except:
+    except Exception:
         log.error("Failed.", exc_info=True)
         sys.exit(1)
     finally:
         webdriver.quit()
 
-    log.info("storing all apartments...")
     with Session(engine) as session:
+        log.info("storing all apartments...")
         store_appartments(session, crawled_apartments)
         rows = get_filtered_apartments(session)
 
+        log.info("calculate distances for %s combinations", len(rows))
         vasttrafik = VasttrafikAPI(config.vasttrafik_api_key, config.data_root)
-
         for apartment, subscription, destination in rows:
-            duration = (
-                vasttrafik.get_planned_duration(
-                    apartment.address, destination.destination
-                ).total_seconds()
-                / 60
-            )
-            update_new_apartment(
-                session, apartment, subscription, destination, duration
-            )
+            if destination is not None:
+                duration = (
+                    vasttrafik.get_planned_duration(
+                        apartment.address, destination.destination
+                    ).total_seconds()
+                    / 60
+                )
+                store_duration(session, apartment, destination, duration)
+
+            store_subscribed_apartment(session, apartment, subscription)
 
         log.info("prepare notification")
 
@@ -237,6 +233,14 @@ def crawl(config, engine, _args):
 
     notifications = get_notification(new_apartments)
 
+    mail_server = MailServer(
+        SMTPServerConfig(
+            config.smpt_server,
+            config.smtp_port,
+            config.smtp_user,
+            config.smtp_password,
+        )
+    )
     for subscription, apartment_dict in notifications.items():
         apartment_list = format_mail(apartment_dict)
 
@@ -245,21 +249,21 @@ def crawl(config, engine, _args):
             {"number": len(apartment_list), "email": subscription.email},
         )
         if len(apartment_list) > 0:
-            send_mail(
-                SMTPServerConfig(
-                    config.smpt_server,
-                    config.smtp_port,
-                    config.smtp_user,
-                    config.smtp_password,
-                ),
-                apartment_list,
-                subscription.email,
+            mail_content = "\n".join(apartment_list)
+            mail_server.register_message(
+                subject="New SGS apartments",
+                receiver=subscription.email,
+                content=mail_content,
             )
             log.info("Update database...")
             with Session(engine) as session:
-                store_sent_apartments(session, apartment_dict, subscription)
-        else:
-            log.info("No mail sent.")
+                store_sent_apartments(session, apartment_dict, subscription, True)
+
+    try:
+        mail_server.send_all(attempts=3)
+    except MailSendException:
+        with Session(engine) as session:
+            store_sent_apartments(session, apartment_dict, subscription, False)
 
 
 def add_subscription(_config, engine, args):

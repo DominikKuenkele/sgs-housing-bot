@@ -1,0 +1,28 @@
+services:
+  sgs-housing-bot:
+    build: .
+    restart: always
+    secrets:
+      - smtp_server
+      - smtp_port
+      - smtp_user
+      - smtp_password
+      - vasttrafik_api_key
+    environment:
+      - SMTP_SERVER_FILE=/run/secrets/smtp_server
+      - SMTP_PORT_FILE=/run/secrets/smtp_port
+      - SMTP_USER_FILE=/run/secrets/smtp_user
+      - SMTP_PASSWORD_FILE=/run/secrets/smtp_password
+      - VASTTRAFIK_API_KEY_FILE=/run/secrets/vasttrafik_api_key
+
+secrets:
+  smtp_server:
+    file: ./.env_files/smtp_server
+  smtp_port:
+    file: ./.env_files/smtp_port
+  smtp_user:
+    file: ./.env_files/smtp_user
+  smtp_password:
+    file: ./.env_files/smtp_password
+  vasttrafik_api_key:
+    file: ./.env_files/vasttrafik_api_key
