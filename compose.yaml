@@ -8,6 +8,8 @@ services:
       - smtp_user
       - smtp_password
       - vasttrafik_api_key
+    volumes:
+      - ./data/sgs-housing-bit/data:/var/lib/sgs-housing-bot
     environment:
       - SMTP_SERVER_FILE=/run/secrets/smtp_server
       - SMTP_PORT_FILE=/run/secrets/smtp_port
@@ -17,12 +19,12 @@ services:
 
 secrets:
   smtp_server:
-    file: ./.env_files/smtp_server
+    file: ./data/secrets/smtp_server
   smtp_port:
-    file: ./.env_files/smtp_port
+    file: ./data/secrets/smtp_port
   smtp_user:
-    file: ./.env_files/smtp_user
+    file: ./data/secrets/smtp_user
   smtp_password:
-    file: ./.env_files/smtp_password
+    file: ./data/secrets/smtp_password
   vasttrafik_api_key:
-    file: ./.env_files/vasttrafik_api_key
+    file: ./data/secrets/vasttrafik_api_key
