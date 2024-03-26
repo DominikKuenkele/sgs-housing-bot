@@ -1,5 +1,5 @@
 # must be ended with a new line "LF" (Unix) and not "CRLF" (Windows)
-0 9 * * * /usr/local/bin/python /opt/sgs-housing-bot/sgs-bot.py crawl > /proc/1/fd/1 2>/proc/1/fd/2
-0 20 * * * /usr/local/bin/python /opt/sgs-housing-bot/sgs-bot.py crawl > /proc/1/fd/1 2>/proc/1/fd/2
+0 8 * * * /usr/local/bin/python /opt/sgs-housing-bot/sgs-bot.py crawl > /proc/1/fd/1 2>/proc/1/fd/2
+0 19 * * * /usr/local/bin/python /opt/sgs-housing-bot/sgs-bot.py crawl > /proc/1/fd/1 2>/proc/1/fd/2
 
 # An empty line is required at the end of this file for a valid cron file.
