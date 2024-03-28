@@ -224,7 +224,7 @@ def crawl(config, engine, _args):
 
         log.info("calculate distances for %s combinations", len(rows))
         vasttrafik = VasttrafikAPI(config.vasttrafik_api_key, config.data_root)
-        for apartment, subscription, destination in rows:
+        for apartment, subscription, destination, _ in rows:
             if destination is not None:
                 duration = (
                     vasttrafik.get_planned_duration(
