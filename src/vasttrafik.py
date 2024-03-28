@@ -38,6 +38,9 @@ class VasttrafikAPI:
         ) as f:
             self.token = json.load(f)["access_token"]
 
+        self.location_cache: dict[str:Location] = {}
+        self.duration_cache: dict[(Location, Location):timedelta] = {}
+
     def _has_valid_token(self):
         valid = True
         if not os.path.exists(os.path.join(self.data_root, self.ACCESS_TOKEN_FILE)):
@@ -78,81 +81,103 @@ class VasttrafikAPI:
             json.dump(token, f)
 
     def get_location(self, search) -> Location:
-        url = f"{self.BASE_URL}/locations/by-text"
-        headers = {
-            "Authorization": f"Bearer {self.token}",
-        }
-        data = {"q": search, "limit": 1}
-        response = requests.get(url, params=data, headers=headers, timeout=10).json()
+        if search in self.location_cache:
+            location = self.location_cache[search]
+        else:
+            url = f"{self.BASE_URL}/locations/by-text"
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+            }
+            data = {"q": search, "limit": 1}
+            response = requests.get(
+                url, params=data, headers=headers, timeout=10
+            ).json()
 
-        if len(response["results"]) == 0:
-            raise LocationNotFoundException
+            if len(response["results"]) == 0:
+                raise LocationNotFoundException
 
-        result = response["results"][0]
-        return Location(
-            name=result["name"],
-            location_type=result["locationType"],
-            latitude=result["latitude"],
-            longitude=result["longitude"],
-            has_local_service=result["hasLocalService"],
-        )
+            result = response["results"][0]
+
+            location = Location(
+                name=result["name"],
+                location_type=result["locationType"],
+                latitude=result["latitude"],
+                longitude=result["longitude"],
+                has_local_service=result["hasLocalService"],
+            )
+            self.location_cache[search] = location
+
+        return location
 
     def get_planned_duration(self, origin, destination):
         origin_location = self.get_location(origin)
         destination_location = self.get_location(destination)
 
-        url = f"{self.BASE_URL}/journeys"
-        headers = {
-            "Authorization": f"Bearer {self.token}",
-        }
-
-        tomorrow = datetime.now() + timedelta(days=1)
-        date = datetime(
-            tomorrow.year, tomorrow.month, tomorrow.day, 10, 0, 0, tzinfo=timezone.utc
-        ).isoformat()
-        data = {
-            "originName": origin_location.name,
-            "originLatitude": origin_location.latitude,
-            "originLongitude": origin_location.longitude,
-            "destinationName": destination_location.name,
-            "destinationLatitude": destination_location.latitude,
-            "destinationLongitude": destination_location.longitude,
-            "datetime": date,
-            "dateTimeRelatesTo": "departure",
-            "limit": 1,
-        }
-        response = requests.get(url, params=data, headers=headers, timeout=10).json()
-
-        if len(response["results"]) == 0:
-            raise JourneyNotFoundException
-
-        result = response["results"][0]
-        if "departureAccessLink" in result:
-            start_time = datetime.fromisoformat(
-                result["departureAccessLink"]["origin"]["plannedTime"]
-            )
-        elif "tripLegs" in result:
-            start_time = datetime.fromisoformat(
-                result["tripLegs"][0]["origin"]["plannedTime"]
-            )
+        if (origin_location, destination_location) in self.duration_cache:
+            duration = self.duration_cache[(origin_location, destination_location)]
         else:
-            start_time = datetime.fromisoformat(
-                result["destinationLink"]["plannedDepartureTime"]
-            )
 
-        if "arrivalAccessLink" in result:
-            end_time = datetime.fromisoformat(
-                result["arrivalAccessLink"]["destination"]["plannedTime"]
-            )
-        elif "tripLegs" in result:
-            end_time = datetime.fromisoformat(
-                result["tripLegs"][-1]["destination"]["plannedTime"]
-            )
-        else:
-            end_time = datetime.fromisoformat(
-                result["destinationLink"]["plannedArrivalTime"]
-            )
+            url = f"{self.BASE_URL}/journeys"
+            headers = {
+                "Authorization": f"Bearer {self.token}",
+            }
 
-        duration = end_time - start_time
+            tomorrow = datetime.now() + timedelta(days=1)
+            date = datetime(
+                tomorrow.year,
+                tomorrow.month,
+                tomorrow.day,
+                10,
+                0,
+                0,
+                tzinfo=timezone.utc,
+            ).isoformat()
+            data = {
+                "originName": origin_location.name,
+                "originLatitude": origin_location.latitude,
+                "originLongitude": origin_location.longitude,
+                "destinationName": destination_location.name,
+                "destinationLatitude": destination_location.latitude,
+                "destinationLongitude": destination_location.longitude,
+                "datetime": date,
+                "dateTimeRelatesTo": "departure",
+                "limit": 1,
+            }
+            response = requests.get(
+                url, params=data, headers=headers, timeout=10
+            ).json()
+
+            if len(response["results"]) == 0:
+                raise JourneyNotFoundException
+
+            result = response["results"][0]
+            if "departureAccessLink" in result:
+                start_time = datetime.fromisoformat(
+                    result["departureAccessLink"]["origin"]["plannedTime"]
+                )
+            elif "tripLegs" in result:
+                start_time = datetime.fromisoformat(
+                    result["tripLegs"][0]["origin"]["plannedTime"]
+                )
+            else:
+                start_time = datetime.fromisoformat(
+                    result["destinationLink"]["plannedDepartureTime"]
+                )
+
+            if "arrivalAccessLink" in result:
+                end_time = datetime.fromisoformat(
+                    result["arrivalAccessLink"]["destination"]["plannedTime"]
+                )
+            elif "tripLegs" in result:
+                end_time = datetime.fromisoformat(
+                    result["tripLegs"][-1]["destination"]["plannedTime"]
+                )
+            else:
+                end_time = datetime.fromisoformat(
+                    result["destinationLink"]["plannedArrivalTime"]
+                )
+
+            duration = end_time - start_time
+            self.duration_cache[(origin_location, destination_location)] = duration
 
         return duration
