@@ -3,3 +3,4 @@ __pycache__/
 access_token.json
 .env
 .env_files/
+.vscode/

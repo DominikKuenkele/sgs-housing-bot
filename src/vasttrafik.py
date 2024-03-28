@@ -1,10 +1,14 @@
 import json
+import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
 import jwt
 import requests
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 
 class LocationNotFoundException(Exception):
@@ -22,6 +26,15 @@ class Location:
     latitude: str
     longitude: str
     has_local_service: str
+
+    def __hash__(self) -> int:
+        return hash((self.latitude, self.longitude))
+
+    def __eq__(self, value: object) -> bool:
+        if not isinstance(value, self.__class__):
+            return False
+
+        return self.latitude == value.latitude and self.longitude == value.longitude
 
 
 class VasttrafikAPI:
@@ -83,6 +96,7 @@ class VasttrafikAPI:
     def get_location(self, search) -> Location:
         if search in self.location_cache:
             location = self.location_cache[search]
+            log.info("using cached location")
         else:
             url = f"{self.BASE_URL}/locations/by-text"
             headers = {
@@ -115,6 +129,7 @@ class VasttrafikAPI:
 
         if (origin_location, destination_location) in self.duration_cache:
             duration = self.duration_cache[(origin_location, destination_location)]
+            log.info("using cached duration")
         else:
 
             url = f"{self.BASE_URL}/journeys"

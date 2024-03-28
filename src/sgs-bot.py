@@ -84,8 +84,13 @@ def store_appartments(session, apartments):
 def get_filtered_apartments(session: Session):
     statement = (
         select(Apartment, Subscription, Destination, SubscribedApartments)
-        .join(Destination, isouter=True)
         .join(
+            Destination,
+            onclause=Destination.subscription_id == Subscription.id,
+            isouter=True,
+        )
+        .join_from(
+            Apartment,
             SubscribedApartments,
             isouter=True,
             onclause=and_(
@@ -95,7 +100,7 @@ def get_filtered_apartments(session: Session):
         )
         .where(Apartment.area > Subscription.min_area)
         .where(Apartment.rent < Subscription.max_rent)
-        .where(SubscribedApartments.notified != True)
+        .where(SubscribedApartments.notified is not True)
     )
     result = session.execute(statement)
     return result.all()
