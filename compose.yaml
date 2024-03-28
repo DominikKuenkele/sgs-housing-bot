@@ -9,7 +9,7 @@ services:
       - smtp_password
       - vasttrafik_api_key
     volumes:
-      - ./data/sgs-housing-bit/data:/var/lib/sgs-housing-bot
+      - ./data/sgs-housing-bot:/var/lib/sgs-housing-bot
     environment:
       - SMTP_SERVER_FILE=/run/secrets/smtp_server
       - SMTP_PORT_FILE=/run/secrets/smtp_port

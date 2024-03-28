@@ -83,10 +83,19 @@ def store_appartments(session, apartments):
 
 def get_filtered_apartments(session: Session):
     statement = (
-        select(Apartment, Subscription, Destination)
+        select(Apartment, Subscription, Destination, SubscribedApartments)
         .join(Destination, isouter=True)
+        .join(
+            SubscribedApartments,
+            isouter=True,
+            onclause=and_(
+                SubscribedApartments.apartment_id == Apartment.id,
+                SubscribedApartments.subscription_id == Subscription.id,
+            ),
+        )
         .where(Apartment.area > Subscription.min_area)
         .where(Apartment.rent < Subscription.max_rent)
+        .where(SubscribedApartments.notified != True)
     )
     result = session.execute(statement)
     return result.all()
@@ -166,7 +175,7 @@ def format_mail(apartment_dict):
     return [
         f"""{apartment.address} - {apartment.location} (free from {datetime.strftime(apartment.free_from, "%-d %b")}):
 {apartment.size} | {apartment.area}m² | {apartment.rent} SEK
-{" | ".join([f"To {destination.destination}: {distance.time}min" for destination, distance in distances.items()]) if list(distances.keys())[0] is not None else ""}
+{" | ".join([f"To {destination.destination}: {distance.time}min" for destination, distance in distances.items() if destination is not None])}
 {apartment.url}
 """
         for apartment, distances in apartment_dict.items()
