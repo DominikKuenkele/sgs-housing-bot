@@ -102,7 +102,6 @@ def get_filtered_apartments(session: Session):
         .where(Apartment.rent < Subscription.max_rent)
         .where(SubscribedApartments.notified.is_not(True))
     )
-    print(statement)
     result = session.execute(statement)
     return result.all()
 
