@@ -96,7 +96,10 @@ class VasttrafikAPI:
     def get_location(self, search) -> Location:
         if search in self.location_cache:
             location = self.location_cache[search]
-            log.info("using cached location")
+            log.debug(
+                "using cached location for %s",
+                search,
+            )
         else:
             url = f"{self.BASE_URL}/locations/by-text"
             headers = {
@@ -129,7 +132,10 @@ class VasttrafikAPI:
 
         if (origin_location, destination_location) in self.duration_cache:
             duration = self.duration_cache[(origin_location, destination_location)]
-            log.info("using cached duration")
+            log.debug(
+                "using cached duration from %(origin)s to %(destination)s",
+                {"origin": origin, "destination": destination},
+            )
         else:
 
             url = f"{self.BASE_URL}/journeys"
